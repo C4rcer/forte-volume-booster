@@ -1,0 +1,24 @@
+{
+  "slug": "forte-volume-booster-equalizer",
+  "name": "Forte: Volume Booster & Equalizer",
+  "summary": "Make any site louder, up to 600%, without crackling: a built-in limiter keeps the boost clean. 10-band equalizer with presets (voice, bass, treble), volume per site, one-click off. Free, no ads, no tracking.",
+  "description": "Forte boosts and shapes the sound of video and audio players on any website: news sites, online courses, podcasts, streaming services, video calls in the browser, quiet laptop speakers and everything else that plays in Firefox.\n\n<b>What it does</b>\n- Volume from 0% to 600%, with quick presets and a slider\n- A limiter that holds peaks just under full scale, so even a big boost stays clean instead of crackling\n- 10-band equalizer with presets: Voice / dialogue, Bass boost, Treble boost, Loudness, Laptop speakers, Rock, Pop, Electronic, Classical, Acoustic and more, or drag the bands yourself\n- \"Even out loud and quiet parts\" (night mode): quiet dialogue up, sudden explosions down\n- Mono and left/right balance, handy with one earbud or uneven speakers\n- Remembers your volume and EQ per site, or one setting everywhere\n- Turn it off for a site with one click\n- The toolbar icon shows the boost on each tab, and a live level meter shows when the limiter is working\n- Works in embedded players, iframes and players hidden in shadow DOM\n- Works on Firefox for Android\n\n<b>It won't mute your videos</b>\nFirefox only lets add-ons process sound that comes from the same site, or from a server that allows it. Boosters that ignore this turn some videos silent. Forte checks every player first and leaves the ones it can't process playing normally, and tells you so in the popup. It also changes nothing at all until you raise the volume or pick an EQ preset.\n\n<b>Plays well with others</b>\nForte stays off on YouTube and Twitch unless you turn it on there, so it doesn't fight add-ons made for those sites (such as YouTube/Twitch Enhancer) that adjust their sound their own way. Players that another add-on already processes are left alone. Speed add-ons such as Tempo: Video Speed Controller keep working alongside it.\n\n<b>Free, for real</b>\nEvery feature is unlocked for everyone. No ads, no account, no analytics. Your settings stay in your browser and are never sent anywhere.\n\nIf Forte helps and you'd like to say thanks, there's a Ko-fi link in the popup. It's entirely optional and unlocks nothing.\n\n<b>Permissions</b>\n\"Access your data for all websites\" is needed so Forte can find and process audio and video players on whatever site you use. Forte only touches media players; it does not read or send page content.",
+  "categories": {
+    "firefox": [
+      "photos-music-videos"
+    ]
+  },
+  "compatibility": [
+    "firefox",
+    "android"
+  ],
+  "license": "MPL-2.0",
+  "homepage": "",
+  "support_url": "",
+  "contributions_url": "https://ko-fi.com/carcer7378",
+  "screenshot_captions": {
+    "1-popup.png": "Boost any site up to 600% with a limiter that keeps it clean, plus a 10-band equalizer",
+    "2-equalizer.png": "EQ presets for voice, bass and treble, night mode, mono and balance",
+    "3-options.png": "Volume and EQ remembered per site; players Forte can't process are left playing normally"
+  }
+}

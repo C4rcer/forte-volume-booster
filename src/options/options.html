@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forte settings</title>
+  <link rel="stylesheet" href="../popup/popup.css">
+  <link rel="stylesheet" href="../shared/support.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="page">
+    <header class="top">
+      <span class="brand"><img src="../icons/icon.svg" alt="" width="26" height="26"> Forte settings</span>
+      <a class="support-pill" data-support><span class="heart">&#x2665;</span> Support Forte</a>
+    </header>
+
+    <section class="card">
+      <h2>Volume and equalizer</h2>
+      <label class="row"><span>Forte is on</span><input id="enabled" type="checkbox"></label>
+      <label class="row"><span>Remember volume and EQ</span>
+        <select id="remember">
+          <option value="site">Per site (each site keeps its own)</option>
+          <option value="global">Same everywhere</option>
+          <option value="off">Don't remember (every page starts at the default)</option>
+        </select>
+      </label>
+      <label class="row"><span>Default volume for new sites (%)</span><input id="defaultGain" type="number" min="0" max="600" step="5"></label>
+      <label class="row"><span>Default equalizer preset</span><select id="defaultPreset"></select></label>
+      <label class="row"><span>Prevent distortion when boosting (limiter)<small>Holds peaks just under full scale so loud boosts don't crackle. Off gives the raw boost.</small></span><input id="limiter" type="checkbox"></label>
+      <label class="row"><span>Show the boost on the toolbar icon</span><input id="showBadge" type="checkbox"></label>
+    </section>
+
+    <section class="card">
+      <h2>YouTube and Twitch</h2>
+      <p class="muted">Forte stays off on YouTube and Twitch unless you turn it on. Add-ons made for those sites, such as YouTube/Twitch Enhancer, boost and compress their sound their own way, and when two add-ons process the same video it plays twice or one of them stops working. Turn a site on here only if no other add-on changes its volume.</p>
+      <label class="row"><span>Use Forte on YouTube</span><input id="clash-youtube.com" data-clash="youtube.com" type="checkbox"></label>
+      <label class="row"><span>Use Forte on Twitch</span><input id="clash-twitch.tv" data-clash="twitch.tv" type="checkbox"></label>
+    </section>
+
+    <section class="card">
+      <h2>Sites</h2>
+      <h3>Remembered</h3>
+      <div id="sites" class="sites"></div>
+      <h3>Forte is off on</h3>
+      <textarea id="blockedSites" rows="4" spellcheck="false" placeholder="one site per line, e.g. example.com"></textarea>
+    </section>
+
+    <section class="card">
+      <h2>Players Forte leaves alone</h2>
+      <p id="aloneText" class="muted">Firefox gives add-ons a page's sound only when the audio comes from the same site, or from a server that allows it. For anything else, boosting would turn the player silent, so Forte checks first and leaves such players playing normally. The popup tells you when that happens. Forte also leaves alone players that another add-on or the site itself already processes, and it changes nothing at all until you raise the volume or pick an EQ preset.</p>
+    </section>
+
+    <section class="card support">
+      <h2>Support</h2>
+      <p>Forte is free and every feature is unlocked for everyone. There are no ads, no accounts and no tracking: your settings never leave this browser. If Forte helps you hear things better, a tip on Ko-fi helps keep it maintained.</p>
+      <a class="support-pill" data-support><span class="heart">&#x2665;</span> Buy me a coffee on Ko-fi</a>
+    </section>
+  </div>
+  <div id="toast" class="toast" hidden>Saved</div>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

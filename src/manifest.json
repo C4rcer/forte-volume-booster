@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Forte: Volume Booster & Equalizer",
+  "version": "0.1.0",
+  "description": "Boost any site's volume up to 600% without distortion, shape it with a 10-band equalizer and remember it per site. Free, no ads, no tracking.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "forte-volume-booster@c4rcer",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": { "required": ["none"] }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  },
+  "permissions": ["storage", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "scripts": ["background.js"],
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/forte.js"],
+      "all_frames": true,
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Forte: volume and equalizer",
+    "default_icon": { "48": "icons/icon.svg", "96": "icons/icon.svg" }
+  },
+  "options_ui": { "page": "options/options.html", "open_in_tab": true },
+  "icons": { "48": "icons/icon.svg", "96": "icons/icon.svg" }
+}

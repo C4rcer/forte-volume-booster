@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Morning Briefing</title>
+  <style>
+    body { margin: 0; font: 15px system-ui, sans-serif; background: #12100f; color: #ece6e1; }
+    .bar { display: flex; align-items: center; gap: 18px; padding: 12px 22px; border-bottom: 1px solid #2a2523; }
+    .logo { font-weight: 800; letter-spacing: .3px; }
+    .nav { color: #a39890; font-size: 13px; display: flex; gap: 16px; }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 18px 22px; }
+    .player { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; overflow: hidden; }
+    .player video { width: 100%; height: 100%; display: block; }
+    h1 { font-size: 21px; margin: 14px 0 6px; }
+    .meta { color: #a39890; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="bar"><span class="logo">The Daily Briefing</span><span class="nav"><span>World</span><span>Science</span><span>Podcasts</span><span>Video</span></span></div>
+  <div class="wrap">
+    <div class="player"><video id="main" controls playsinline></video></div>
+    <h1>Why the quietest interviews are the hardest to hear</h1>
+    <p class="meta">Video &middot; 6 min &middot; Audio described</p>
+  </div>
+  <script>
+    // Builds a real WebM in-page (MediaRecorder over an animated canvas plus a
+    // soft chord) so screenshots need no binary fixtures. window.ready resolves
+    // once the video is set.
+    function makeVideo(seconds) {
+      const c = document.createElement("canvas");
+      c.width = 960; c.height = 540;
+      const g = c.getContext("2d");
+      const stream = c.captureStream(30);
+      const ac = new AudioContext();
+      const dest = ac.createMediaStreamDestination();
+      const gain = ac.createGain();
+      gain.gain.value = 0.06;
+      for (const f of [196, 247, 294]) {
+        const o = ac.createOscillator();
+        o.frequency.value = f;
+        o.connect(gain);
+        o.start();
+      }
+      gain.connect(dest);
+      stream.addTrack(dest.stream.getAudioTracks()[0]);
+      const rec = new MediaRecorder(stream, { mimeType: "video/webm" });
+      const chunks = [];
+      rec.ondataavailable = (e) => chunks.push(e.data);
+      const t0 = performance.now();
+      let raf;
+      const draw = () => {
+        const t = (performance.now() - t0) / 1000;
+        const grd = g.createLinearGradient(0, 0, 960, 540);
+        grd.addColorStop(0, "#3b1f12");
+        grd.addColorStop(1, "#0e1a2b");
+        g.fillStyle = grd; g.fillRect(0, 0, 960, 540);
+        // Two "speakers" in an interview, drawn as soft silhouettes.
+        for (const [x, hue] of [[300, 24], [660, 205]]) {
+          g.fillStyle = `hsla(${hue}, 45%, 62%, .9)`;
+          g.beginPath(); g.arc(x, 230 + Math.sin(t * 2 + x) * 4, 62, 0, Math.PI * 2); g.fill();
+          g.beginPath(); g.ellipse(x, 430, 120, 110, 0, Math.PI, 0); g.fill();
+        }
+        // A level bar under whoever is talking.
+        const who = Math.floor(t / 1.5) % 2;
+        g.fillStyle = "#fb923c";
+        for (let i = 0; i < 18; i++) {
+          const h = 6 + Math.abs(Math.sin(t * 9 + i * 1.7)) * 26;
+          g.fillRect((who ? 600 : 240) + i * 7, 500 - h, 4, h);
+        }
+        raf = requestAnimationFrame(draw);
+      };
+      draw();
+      rec.start(250);
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          rec.onstop = () => {
+            cancelAnimationFrame(raf);
+            ac.close();
+            resolve(URL.createObjectURL(new Blob(chunks, { type: "video/webm" })));
+          };
+          rec.stop();
+        }, seconds * 1000);
+      });
+    }
+    window.ready = makeVideo(5).then((u) => {
+      const v = document.getElementById("main");
+      v.src = u;
+      v.loop = true;
+      return u;
+    });
+  </script>
+</body>
+</html>

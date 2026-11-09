@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Forte test page</title>
+  <style>
+    body { margin: 0; font: 14px system-ui, sans-serif; background: #17120f; color: #f3e9e1; }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 18px; display: flex; flex-wrap: wrap; gap: 12px; }
+    h1 { width: 100%; font-size: 18px; margin: 0 0 4px; }
+    .p { width: 300px; background: #241c17; border-radius: 10px; padding: 8px; }
+    .p b { display: block; font-size: 12px; margin-bottom: 4px; color: #d6c4b6; }
+    video, audio, iframe { width: 100%; display: block; }
+    video { height: 120px; background: #000; }
+    iframe { height: 150px; border: 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="wrap"><h1 id="title">Forte test page</h1><button id="playBtn" type="button">Play all</button></div>
+  <script>
+    // Players are chosen with ?p=a,b,c so each test only runs what it measures.
+    // Media comes from tests/server.py: exact sine tones (same origin), the same
+    // tones from a second origin (?xport=, default port+1) with or without CORS,
+    // and a same-origin URL that redirects there.
+    const params = new URLSearchParams(location.search);
+    const xport = params.get("xport") || String(Number(location.port) + 1);
+    const X = `http://127.0.0.1:${xport}`;
+    const tone = (hz, amp, extra = "") => `/tone.wav?hz=${hz}&amp=${amp}${extra}`;
+    const SPEC = {
+      main: { tag: "video", src: tone(440, 0.1) },
+      loud: { tag: "audio", src: tone(440, 0.5) },
+      low: { tag: "audio", src: tone(100, 0.1) },
+      high: { tag: "audio", src: tone(8000, 0.1) },
+      cross: { tag: "video", src: X + tone(440, 0.1) },
+      corsok: { tag: "video", src: X + tone(440, 0.1, "&cors=1"), crossOrigin: "anonymous" },
+      redir: { tag: "video", src: "/redirect?to=" + encodeURIComponent(X + tone(440, 0.1, "&r=1")) },
+      shadow: { tag: "audio", src: tone(440, 0.1, "&s=shadow"), shadow: true },
+      claimed: { tag: "audio", src: tone(440, 0.1, "&s=claimed"), attrs: { "data-test-claimed": "" } },
+      yte: { tag: "video", src: tone(440, 0.1, "&s=yte") },
+    };
+    const els = {};
+    window.el = (id) => els[id] || document.getElementById(id);
+
+    for (const id of (params.get("p") || "main").split(",").filter(Boolean)) {
+      const box = document.createElement("div");
+      box.className = "p";
+      box.innerHTML = `<b>${id}</b>`;
+      document.getElementById("wrap").append(box);
+      if (id === "ms") {
+        // A MediaStream player, like a participant in a web call.
+        const m = document.createElement("audio");
+        m.id = "ms";
+        m.controls = true;
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        g.gain.value = 0.1;
+        const dest = ctx.createMediaStreamDestination();
+        osc.connect(g).connect(dest);
+        osc.start();
+        m.srcObject = dest.stream;
+        window.__msCtx = ctx;
+        els.ms = m;
+        box.append(m);
+        continue;
+      }
+      if (id === "frame") {
+        const f = document.createElement("iframe");
+        f.id = "frame";
+        const fhost = params.get("fhost"); // e.g. www.youtube.com for an "embedded YouTube player"
+        f.src = (fhost ? `http://${fhost}:${location.port}` : "") + location.pathname +
+          "?p=" + (params.get("fp") || "main") + "&xport=" + xport;
+        box.append(f);
+        continue;
+      }
+      const s = SPEC[id];
+      const m = document.createElement(s.tag);
+      m.id = id;
+      m.controls = true;
+      m.loop = true;
+      m.preload = "auto";
+      if (s.crossOrigin) m.crossOrigin = s.crossOrigin;
+      for (const [k, v] of Object.entries(s.attrs || {})) m.setAttribute(k, v);
+      m.src = s.src;
+      els[id] = m;
+      if (s.shadow) {
+        // A closed shadow root, like many web-component players.
+        const host = document.createElement("div");
+        host.id = "shadowHost";
+        host.attachShadow({ mode: "closed" }).append(m);
+        box.append(host);
+      } else {
+        box.append(m);
+      }
+    }
+
+    // A real click here gives the page user activation (session D).
+    document.getElementById("playBtn").addEventListener("click", () => {
+      for (const m of Object.values(els)) m.play();
+    });
+    window.play = (id) => {
+      if (id === "ms" && window.__msCtx) window.__msCtx.resume();
+      return window.el(id).play().then(() => "ok", (e) => String(e));
+    };
+    window.pauseAll = () => { for (const m of Object.values(els)) m.pause(); };
+    window.info = (id) => {
+      const m = window.el(id);
+      return { paused: m.paused, muted: m.muted, volume: m.volume, t: m.currentTime, rate: m.playbackRate,
+        ready: m.readyState, error: m.error && m.error.code, wired: m.getAttribute("data-forte-wired") };
+    };
+
+    // The page's own Web Audio, used as a control: what happens if *anyone*
+    // routes this media through Web Audio (a fresh element with the same src).
+    window.pageProbe = async (id) => {
+      const src = window.el(id);
+      const m = new Audio();
+      if (src.crossOrigin) m.crossOrigin = src.crossOrigin;
+      m.src = src.src;
+      m.loop = true;
+      const ctx = new AudioContext();
+      const node = ctx.createMediaElementSource(m);
+      const an = ctx.createAnalyser();
+      node.connect(an);
+      an.connect(ctx.destination);
+      await m.play();
+      await ctx.resume();
+      await new Promise((r) => setTimeout(r, 1500));
+      const b = new Float32Array(an.fftSize);
+      an.getFloatTimeDomainData(b);
+      let peak = 0;
+      for (const x of b) peak = Math.max(peak, Math.abs(x));
+      m.pause();
+      ctx.close();
+      return peak;
+    };
+
+    // Mimics YouTube/Twitch Enhancer's volume boost: the page routes the element
+    // through its own AudioContext and marks it the way YTE does.
+    window.simulateYte = (id) => {
+      const m = window.el(id);
+      const ctx = new AudioContext();
+      const node = ctx.createMediaElementSource(m);
+      const an = ctx.createAnalyser();
+      node.connect(an);
+      an.connect(ctx.destination);
+      m.dataset.ytbBoostWired = "yte-instance";
+      window.__yte = { ctx, an };
+      ctx.resume();
+      return ctx.state;
+    };
+    window.yteLevel = () => {
+      const b = new Float32Array(window.__yte.an.fftSize);
+      window.__yte.an.getFloatTimeDomainData(b);
+      let peak = 0;
+      for (const x of b) peak = Math.max(peak, Math.abs(x));
+      return peak;
+    };
+  </script>
+</body>
+</html>
