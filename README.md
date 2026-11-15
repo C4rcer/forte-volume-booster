@@ -105,6 +105,7 @@ src/                       everything that ships
   options/                 settings page
   shared/settings.js       defaults, EQ presets, helpers for background/popup/options
   shared/support.*         Ko-fi pill + milestone thank-you card (from the template)
+  shared/more-addons.*     "More free add-ons" card + rate link (same file in every add-on; set `live: true` as listings are approved)
 store-assets/listing.json  AMO listing text, categories, Ko-fi contributions_url
 store-assets/screenshots/  1280x800 listing images (made by tests/screenshots.py)
 tests/                     real-Firefox E2E, screenshot generator, local media server (not shipped)

@@ -1,4 +1,5 @@
 import { wireSupportLinks } from "../shared/support.js";
+import { renderMoreAddons } from "../shared/more-addons.js";
 import { EQ_PRESETS, cleanAudio, clampGain, formatGain, getSettings, saveSettings } from "../shared/settings.js";
 
 const $ = (id) => document.getElementById(id);
@@ -77,6 +78,7 @@ async function renderSites() {
 
 async function init() {
   wireSupportLinks();
+  renderMoreAddons(document.getElementById("moreAddons")).catch(() => {});
   for (const [key, p] of Object.entries(EQ_PRESETS)) $("defaultPreset").append(new Option(p.label, key));
   settings = await getSettings();
   fill();
