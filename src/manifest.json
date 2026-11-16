@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Forte: Volume Booster & Equalizer",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Boost any site's volume up to 600% without distortion, shape it with a 10-band equalizer and remember it per site. Free, no ads, no tracking.",
   "browser_specific_settings": {
     "gecko": {
