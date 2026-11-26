@@ -135,14 +135,16 @@
 
     // Mimics YouTube/Twitch Enhancer's volume boost: the page routes the element
     // through its own AudioContext and marks it the way YTE does.
-    window.simulateYte = (id) => {
+    // mark = false: routed the way YouTube/Twitch Enhancer does it on Twitch, any
+    // other volume add-on does, or a site's own Web Audio player: no marker at all.
+    window.simulateYte = (id, mark = true) => {
       const m = window.el(id);
       const ctx = new AudioContext();
       const node = ctx.createMediaElementSource(m);
       const an = ctx.createAnalyser();
       node.connect(an);
       an.connect(ctx.destination);
-      m.dataset.ytbBoostWired = "yte-instance";
+      if (mark) m.dataset.ytbBoostWired = "yte-instance";
       window.__yte = { ctx, an };
       ctx.resume();
       return ctx.state;

@@ -144,7 +144,7 @@ function renderStatus() {
     add("Playing untouched at 100%. Turn it up or pick an EQ preset to start.");
   }
   if (n("gesture")) add("Click anywhere on the page once: Firefox lets add-ons process a page's sound only after you've interacted with it.", true);
-  if (n("waiting")) add(`Starts when the ${plural(n("waiting"), "player", "players")} play with sound.`);
+  if (n("waiting")) add(`Starts when the ${plural(n("waiting"), "player plays", "players play")} with sound.`);
   if (n("probing")) add("Checking that the sound can be processed...");
   if (n("cors")) {
     const one = n("cors") === 1;
@@ -208,23 +208,12 @@ function setControlsEnabled(on) {
 }
 
 function applyOffState() {
-  const reason = offReason(settings, site, host);
+  const reason = offReason(settings, site);
   $("notice").hidden = true;
   $("siteEnabled").checked = !settings.blockedSites.includes(site);
   if (reason === "paused") {
     notice("Forte is paused on every site.", button("Turn Forte back on", async () => {
       settings = await saveSettings({ enabled: true });
-      applyOffState();
-    }));
-  } else if (reason.startsWith("clash:")) {
-    const key = reason.slice(6);
-    const name = CLASH_SITES[key];
-    notice([
-      `Forte is off on ${name} by default.`,
-      `Add-ons such as YouTube/Twitch Enhancer adjust ${name}'s sound their own way, and when two add-ons process the same video it plays twice or one of them stops working.`,
-      `Turn Forte on here only if no other add-on changes ${name}'s volume.`,
-    ], button(`Use Forte on ${name}`, async () => {
-      settings = await saveSettings({ clashOptIn: Array.from(new Set([...settings.clashOptIn, key])) });
       applyOffState();
     }));
   }
@@ -256,7 +245,7 @@ async function renderUsage() {
   const { usage } = await browser.storage.local.get("usage");
   const days = usage ? usage.days : 0;
   await maybeShowMilestone($("supportCard"), days, [7, 30, 100], (d) =>
-    `Forte has boosted your sound on ${d} different days. It's free, with no ads and no tracking. If that's worth a coffee, tips keep it maintained.`);
+    `Forte has boosted your sound on ${d} different days.`);
 }
 
 async function init() {

@@ -10,8 +10,14 @@
 //      without CORS (checked by URL), including same-origin URLs that redirect
 //      elsewhere (checked by a mozCaptureStream probe that doesn't affect
 //      playback). Such players are left alone and play normally.
-//   3. If routing fails or another add-on already handles the element
-//      (InvalidStateError, or YouTube/Twitch Enhancer's marker), skip it.
+//   3. Never route an element something else has already routed. Firefox does
+//      not refuse a second createMediaElementSource (measured on 147: no
+//      InvalidStateError, and both graphs get the full signal, so the sound
+//      doubles). It does say so: el.mozAudioCaptured is true once any
+//      AudioContext has taken the element, whether another add-on's or the
+//      site's own, and stays false for our probe. Such players are left alone.
+//      YouTube/Twitch Enhancer's marker and a thrown InvalidStateError are
+//      honoured as well.
 (() => {
   "use strict";
   if (window.__forteLoaded) return;
@@ -177,6 +183,7 @@
     if (el.hasAttribute(YTE_ATTR)) return setStatus(st, "other");
     const mark = el.getAttribute(WIRED_ATTR);
     if (mark && mark !== INSTANCE) return setStatus(st, "stale"); // routed by a previous Forte (reload)
+    if (el.mozAudioCaptured === true) return setStatus(st, "claimed", "captured"); // see rule 3
     const verdict = corsVerdict(el);
     if (verdict === "tainted") return setStatus(st, "cors", "url");
     if (st.status === "cors" && st.why === "probe") return; // re-probed only on a new source or user change
@@ -300,6 +307,8 @@
   function route(el, st) {
     if (st.src || !chain) return;
     if (el.hasAttribute(YTE_ATTR)) return setStatus(st, "other");
+    // Someone may have routed it while the probe was listening (rule 3).
+    if (el.mozAudioCaptured === true) return setStatus(st, "claimed", "captured");
     let src;
     try {
       src = ctx.createMediaElementSource(el);
@@ -576,7 +585,7 @@
   async function hello() {
     let res = null;
     try {
-      res = await api.runtime.sendMessage({ type: "forte:hello", host: location.hostname });
+      res = await api.runtime.sendMessage({ type: "forte:hello" });
     } catch {
       return;
     }

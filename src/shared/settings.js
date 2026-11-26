@@ -22,11 +22,20 @@ export const EQ_PRESETS = {
   acoustic: { label: "Acoustic", gains: [4, 3.5, 2.5, 1, 1.5, 1.5, 3, 3.5, 3, 2] },
 };
 
-// Sites whose players are usually handled by dedicated add-ons (YouTube/Twitch
-// Enhancer, Enhancer for YouTube, ...) that route the video through Web Audio
-// themselves. Two add-ons processing one video clash, so Forte stays off there
-// unless the user opts in.
+// YouTube and Twitch. Up to 0.1.3 Forte stayed off on these unless the user
+// opted in, to keep out of the way of add-ons made for them (YouTube/Twitch
+// Enhancer, Enhancer for YouTube, ...). That cost every new user their first
+// try, and it was never needed: a player can be routed through Web Audio only
+// once, so whichever add-on gets there first keeps it and the other one does
+// nothing. The content script already leaves such a player alone and says so.
+// What is left here: the site's name for the popup, and the hosts that the
+// one-time 0.1.x migration looks at (see legacyQuietHosts).
 export const CLASH_SITES = { "youtube.com": "YouTube", "twitch.tv": "Twitch" };
+// Hosts of those sites, spelled as siteKey() returns them (no "www.").
+export const CLASH_HOSTS = {
+  "youtube.com": ["youtube.com", "m.youtube.com", "music.youtube.com", "tv.youtube.com"],
+  "twitch.tv": ["twitch.tv", "m.twitch.tv", "clips.twitch.tv"],
+};
 
 export const DEFAULT_AUDIO = {
   gain: 1,
@@ -45,7 +54,6 @@ export const DEFAULTS = {
   limiter: true,
   showBadge: true,
   blockedSites: [],
-  clashOptIn: [], // e.g. ["youtube.com"] once the user turns Forte on there
 };
 
 // Pages where Firefox never lets extensions run.
@@ -97,6 +105,17 @@ export function defaultAudio(settings) {
   return cleanAudio({ gain: settings.defaultGain, preset: settings.defaultPreset });
 }
 
+/**
+ * The audio config Forte starts a site with: what was remembered for it (or
+ * for every site), else the default. `sites` and `globalAudio` are the stored
+ * values of those keys.
+ */
+export function rememberedFrom(settings, site, sites, globalAudio) {
+  if (settings.remember === "site" && site && sites && sites[site]) return cleanAudio(sites[site]);
+  if (settings.remember === "global" && globalAudio) return cleanAudio(globalAudio);
+  return defaultAudio(settings);
+}
+
 /** Hostname used for per-site memory and blocking ("" when not a web page). */
 export function siteKey(url) {
   try {
@@ -119,7 +138,7 @@ export function clashSite(host) {
 export function mergeSettings(stored) {
   const s = { ...DEFAULTS, ...(stored || {}) };
   if (!Array.isArray(s.blockedSites)) s.blockedSites = [];
-  if (!Array.isArray(s.clashOptIn)) s.clashOptIn = [];
+  delete s.clashOptIn; // 0.1.x opt-in list for YouTube and Twitch, no longer used
   if (!["site", "global", "off"].includes(s.remember)) s.remember = "site";
   s.defaultGain = clampGain(s.defaultGain);
   if (!EQ_PRESETS[s.defaultPreset]) s.defaultPreset = "flat";
@@ -138,10 +157,31 @@ export async function saveSettings(patch) {
 }
 
 /** Why Forte stays out of a page, or "" when it may run. */
-export function offReason(settings, site, frameHost) {
+export function offReason(settings, site) {
   if (!settings.enabled) return "paused";
   if (site && settings.blockedSites.includes(site)) return "blocked";
-  const c = clashSite(site) || clashSite(frameHost);
-  if (c && !settings.clashOptIn.includes(c)) return "clash:" + c;
   return "";
+}
+
+/**
+ * One-time step when updating from 0.1.x, where Forte was off on YouTube and
+ * Twitch unless the user opted in. Returns the hosts of the sites they had
+ * NOT opted in on which Forte would now start changing the sound by itself
+ * (a volume kept for every site, one left over for that host, or a
+ * non-default volume for new sites). The caller puts them on the "Forte is
+ * off on" list, where the popup's site switch turns them back on: an update
+ * must never make somebody's video louder.
+ * `stored` is the raw stored settings object (it still has clashOptIn).
+ */
+export function legacyQuietHosts(stored, sites, globalAudio) {
+  const optedIn = stored && Array.isArray(stored.clashOptIn) ? stored.clashOptIn : [];
+  const settings = mergeSettings(stored);
+  const out = [];
+  for (const [domain, hosts] of Object.entries(CLASH_HOSTS)) {
+    if (optedIn.includes(domain)) continue;
+    for (const host of hosts) {
+      if (!isNeutral(rememberedFrom(settings, host, sites, globalAudio))) out.push(host);
+    }
+  }
+  return out;
 }

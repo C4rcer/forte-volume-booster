@@ -67,15 +67,31 @@ So `src/content/forte.js` follows these rules:
 
 ## Living with other add-ons
 
+- **Anything that has already routed a player** (another volume add-on, or a
+  site's own Web Audio player). Firefox does not refuse a second
+  `createMediaElementSource` on the same element: measured on Firefox 147, there
+  is no `InvalidStateError`, both graphs get the full signal and the sound
+  doubles. Firefox does report it: `el.mozAudioCaptured` is true once any
+  AudioContext has taken the element and stays false for Forte's own
+  `mozCaptureStream` probe. Forte checks it before routing and leaves such a
+  player alone ("already handled by another add-on or by the site" in the
+  popup). 0.1.3 did not, and routed it a second time.
 - **YouTube/Twitch Enhancer** (YTE) routes the YouTube/Twitch `<video>` through
-  its own AudioContext when its volume boost or compressor is on. Since Firefox
-  lets both graphs have the sound, the clash would be doubled audio. Forte is
-  therefore **off on youtube.com and twitch.tv** (all subdomains, including
-  embeds on other sites) until the user opts in from the popup or settings; the
-  popup says why. Even when opted in, Forte skips any element YTE has marked
-  (`data-ytb-boost-wired`), and steps back (disconnects its own path) if YTE
-  routes a video Forte already routed. Forte marks the elements it routes with
-  `data-forte-wired`, which YTE could check in a future version.
+  its own AudioContext when its volume boost or compressor is on. Up to 0.1.3
+  Forte was therefore off on youtube.com and twitch.tv until the user opted in.
+  Since 0.2.0 it is **on there like anywhere else**: the check above covers a
+  video YTE routed first, on both sites. Forte still skips any element YTE has
+  marked (`data-ytb-boost-wired`, set on YouTube only) and steps back
+  (disconnects its own path) if YTE marks a video Forte already routed. What is
+  not covered: YTE's Twitch boost switched on *after* Forte routed the video,
+  because YTE sets no marker on Twitch and does not check
+  `mozAudioCaptured` or Forte's `data-forte-wired` yet. That needs a change in
+  YTE.
+- **Updating from 0.1.x.** An update must never make a video louder. On the
+  first run after an update from 0.1.x, YouTube and Twitch hosts the user had
+  not opted in, and where a boost would now start by itself (a volume kept for
+  every site, one left over for that host, or a raised volume for new sites),
+  go on the "Forte is off on" list. The popup's site switch turns them on.
 - **Tempo: Video Speed Controller** only sets `playbackRate` / `preservesPitch`.
   Tested together: Tempo's keys and remembered speed still work on routed
   players, playback runs at the chosen speed through Forte's graph, and Forte's
@@ -104,7 +120,7 @@ src/                       everything that ships
   popup/                   toolbar popup (?tab=<id> opens it against a tab, for tests)
   options/                 settings page
   shared/settings.js       defaults, EQ presets, helpers for background/popup/options
-  shared/support.*         Ko-fi pill + milestone thank-you card (from the template)
+  shared/support.*         Ko-fi pill + one-time milestone card: a rating ask first, tips later (from the template)
   shared/more-addons.*     "More free add-ons" card + rate link (same file in every add-on; set `live: true` as listings are approved)
 store-assets/listing.json  AMO listing text, categories, Ko-fi contributions_url
 store-assets/screenshots/  1280x800 listing images (made by tests/screenshots.py)
@@ -117,8 +133,8 @@ tools/release.py           build / lint / submit / status / contrib / screenshot
 ```powershell
 python tools/release.py lint                 # build + web-ext lint the zip (expect 0/0/0)
 python -m pip install selenium pillow        # once, ideally in a venv, for the tests
-python tests/e2e_firefox.py                  # 82 checks in headless Firefox, 4 sessions
-python tests/e2e_firefox.py --only=A         # just one session (A, B, C, D)
+python tests/e2e_firefox.py                  # 111 checks in headless Firefox, 5 sessions
+python tests/e2e_firefox.py --only=A         # just one session (A, B, C, D, E)
 python tests/screenshots.py                  # regenerate store screenshots
 ```
 
@@ -129,10 +145,11 @@ audible; levels are measured inside the page by Forte's own AnalyserNodes
 
 | Session | Covers |
 | --- | --- |
-| A | untouched by default, 300% measured as 3x, limiter (600% of a -6 dBFS tone peaks at 0.76; off: 3.0), EQ presets measured at 100 Hz / 8 kHz, popup EQ select and band drag, per-site and global memory, CORS-silent skip by URL and by probe (redirect) with a page-side control proving those players really go silent when routed, CORS-enabled player boosted, closed shadow DOM, iframes, site's own volume/mute on routed file and MediaStream players, one-click off (back to 1x at once), YouTube/Twitch off by default + popup opt-in, embedded YouTube left alone, YTE-routed players left to YTE (before and after) |
+| A | untouched by default, 300% measured as 3x, limiter (600% of a -6 dBFS tone peaks at 0.76; off: 3.0), EQ presets measured at 100 Hz / 8 kHz, popup EQ select and band drag, per-site and global memory, CORS-silent skip by URL and by probe (redirect) with a page-side control proving those players really go silent when routed, CORS-enabled player boosted, closed shadow DOM, iframes, site's own volume/mute on routed file and MediaStream players, one-click off (back to 1x at once), YouTube/Twitch on by default (and an embedded YouTube player), a player already routed by something else left alone with no marker to go by, YTE-routed players left to YTE (before and after), the 0.1.x update rule |
 | B | two cases Firefox 147 can't be made to produce, via test shims added to a test copy of the zip (`tests/shim-*.js`, never shipped): the `InvalidStateError` fallback, and an AudioContext held suspended until a click (player left playing untouched, popup asks for a click, routed after it) |
 | C | Forte + Tempo installed together (Tempo's zip from `../tempo-video-speed/dist/`): Tempo's keys and remembered speed on a routed player, real 2x playback through the graph, Forte's gain unaffected |
 | D | strict autoplay (transient activation, as in hardened profiles): no AudioContext while nothing plays, routed right after the user's click, a boost chosen later still applies |
+| E | a real update from 0.1.3 (`tests/fixtures/forte-0.1.3.zip`) for a user who keeps 200% for every site and never opted in: YouTube and Twitch go on the off list, YouTube stays untouched, the popup's site switch turns it on at the kept 200%, other sites carry on |
 
 Manual: `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → `src/manifest.json`.
 

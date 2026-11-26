@@ -25,7 +25,6 @@ function fill() {
   $("remember").value = settings.remember;
   $("defaultGain").value = Math.round(settings.defaultGain * 100);
   $("defaultPreset").value = settings.defaultPreset;
-  for (const el of document.querySelectorAll("[data-clash]")) el.checked = settings.clashOptIn.includes(el.dataset.clash);
   $("blockedSites").value = settings.blockedSites.join("\n");
 }
 
@@ -92,14 +91,6 @@ async function init() {
     e.target.value = Math.round(g * 100);
     await save({ defaultGain: g });
   });
-  for (const el of document.querySelectorAll("[data-clash]")) {
-    el.addEventListener("change", async () => {
-      const set = new Set(settings.clashOptIn);
-      if (el.checked) set.add(el.dataset.clash);
-      else set.delete(el.dataset.clash);
-      await save({ clashOptIn: Array.from(set) });
-    });
-  }
   $("blockedSites").addEventListener("change", async (e) => {
     const list = e.target.value.split(/\s+/).map((s) => s.trim().toLowerCase()
       .replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "")).filter(Boolean);

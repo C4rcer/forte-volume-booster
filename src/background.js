@@ -1,4 +1,6 @@
-import { cleanAudio, defaultAudio, getSettings, offReason, siteKey } from "./shared/settings.js";
+import {
+  cleanAudio, getSettings, legacyQuietHosts, mergeSettings, offReason, rememberedFrom, siteKey,
+} from "./shared/settings.js";
 
 // Serialise every read-modify-write of storage so concurrent writers never
 // lose each other's updates.
@@ -17,14 +19,8 @@ function serial(fn) {
 const tabKey = (tabId) => "tab:" + tabId;
 
 async function rememberedAudio(site, settings) {
-  if (settings.remember === "site" && site) {
-    const { sites = {} } = await browser.storage.local.get("sites");
-    if (sites[site]) return cleanAudio(sites[site]);
-  } else if (settings.remember === "global") {
-    const { globalAudio } = await browser.storage.local.get("globalAudio");
-    if (globalAudio) return cleanAudio(globalAudio);
-  }
-  return defaultAudio(settings);
+  const { sites, globalAudio } = await browser.storage.local.get(["sites", "globalAudio"]);
+  return rememberedFrom(settings, site, sites, globalAudio);
 }
 
 async function audioForTab(tabId, site, settings) {
@@ -40,7 +36,7 @@ function persistAudio(site, audio, settings) {
   return serial(async () => {
     if (settings.remember === "site" && site) {
       const { sites = {} } = await browser.storage.local.get("sites");
-      const def = defaultAudio(settings);
+      const def = rememberedFrom(settings, "", null, null); // the default for a new site
       if (JSON.stringify(audio) === JSON.stringify(def)) delete sites[site];
       else sites[site] = audio;
       await browser.storage.local.set({ sites });
@@ -145,7 +141,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
         const settings = await getSettings();
         const site = siteKey(tab ? tab.url : sender.url);
         const audio = await audioForTab(tab && tab.id, site, settings);
-        return { settings, site, off: offReason(settings, site, msg.host), audio };
+        return { settings, site, off: offReason(settings, site), audio };
       })();
     case "forte:get":
       // Popup: the tab's current config plus what every frame reported.
@@ -190,10 +186,29 @@ browser.storage.onChanged.addListener(async (changes, area) => {
 browser.action.setBadgeBackgroundColor({ color: "#c2410c" }).catch(() => {});
 if (browser.action.setBadgeTextColor) browser.action.setBadgeTextColor({ color: "#ffffff" }).catch(() => {});
 
+// Updating from 0.1.x, where Forte was off on YouTube and Twitch unless opted
+// in: keep it off on the ones where it would now start boosting by itself.
+async function keepQuietAfterUpdate() {
+  try {
+    const got = await browser.storage.local.get(["settings", "sites", "globalAudio"]);
+    const hosts = legacyQuietHosts(got.settings, got.sites, got.globalAudio);
+    if (!hosts.length && !got.settings) return;
+    const settings = mergeSettings(got.settings); // also drops the old opt-in list
+    settings.blockedSites = Array.from(new Set([...settings.blockedSites, ...hosts]));
+    await browser.storage.local.set({ settings });
+  } catch {
+    // Storage trouble: nothing to migrate from, Forte starts with its defaults.
+  }
+}
+
 // On install/update, inject into tabs that were already open so Forte works
 // without a reload. Nothing is routed until the user asks for a boost, and a
 // player routed by a previous version is detected and left alone.
-browser.runtime.onInstalled.addListener(async () => {
+browser.runtime.onInstalled.addListener(async (details) => {
+  // First, and before any tab gets the new content script.
+  if (details && details.reason === "update" && /^0\.1\./.test(details.previousVersion || "")) {
+    await keepQuietAfterUpdate();
+  }
   let tabs = [];
   try {
     tabs = await browser.tabs.query({ url: ["http://*/*", "https://*/*"] });

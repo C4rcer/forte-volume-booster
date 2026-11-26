@@ -13,8 +13,8 @@ media.volume_scale = 0.0: nothing is ever audible.
 Sessions:
   A  Forte alone: untouched by default, boost, limiter, EQ presets, per-site and
      global memory, cross-origin (CORS-silent) players left alone, shadow DOM
-     and iframes, one-click off, YouTube/Twitch default-off with opt-in, and
-     players already routed by YouTube/Twitch Enhancer.
+     and iframes, one-click off, YouTube/Twitch on by default, players already
+     routed by something else (with or without YouTube/Twitch Enhancer's marker).
   B  Forte with test shims (tests/shim-*.js, never shipped) for two cases
      Firefox 147 can't be made to produce: createMediaElementSource throwing the
      spec's InvalidStateError, and an AudioContext held suspended until a click.
@@ -22,6 +22,9 @@ Sessions:
   D  Strict autoplay (transient activation, as in hardened profiles): no
      AudioContext while nothing plays, routing right after the user's click,
      and a boost chosen later still applying.
+  E  A real update from 0.1.3 (tests/fixtures/forte-0.1.3.zip), the last version
+     that was off on YouTube and Twitch: sites where a boost would start by
+     itself stay off, everything else carries on.
 """
 import json
 import os
@@ -54,7 +57,7 @@ TEMPO_UUID = "6f1c2c1e-7e3a-4b8a-9d55-7e3a00c0ffee"
 P1, P2 = 8961, 8962
 EXT = f"moz-extension://{UUID}"
 HEADED = "--headed" in sys.argv
-ONLY = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--only=")), "ABCD")
+ONLY = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--only=")), "ABCDE")
 
 results = []
 
@@ -439,6 +442,7 @@ def session_a(forte_dir):
         check("list skips itself and unreleased add-ons, and desktop-only ones on Android",
               more.get("desktopPick") == ["a", "b"] and more.get("androidPick") == ["b"],
               (more.get("desktopPick"), more.get("androidPick")))
+        check_milestone_card(s.ext)
         # A later visit in a new tab: no tab state, only what was remembered for the site.
         s.ext(f"await browser.storage.session.remove('tab:{s.tab_id}'); return true;")
         s.load("main")
@@ -521,41 +525,93 @@ def session_a(forte_dir):
         r_on = s.ratio()
         check("site switch on again: back to 2x", near(r_on, 2.0, 0.08), r_on)
 
-        # ---- YouTube and Twitch: off by default, opt-in from the popup
+        # ---- YouTube and Twitch: on like any other site (they were off until 0.1.3)
         s.load("main", host="www.youtube.com")
+        st = s.status()
+        check("youtube.com: nothing set, nothing touched (no AudioContext)",
+              st and st["off"] == "" and st["ctx"] == "none" and s.info("main")["wired"] is None, st)
         s.play("main")
         s.set_audio(gain=3)
-        time.sleep(1.5)
-        st = s.status()
-        check("youtube.com: Forte is off by default", st and st["off"] == "clash:youtube.com", st and st["off"])
-        check("youtube.com: player untouched (no AudioContext, not routed)",
-              st and st["ctx"] == "none" and s.info("main")["wired"] is None and not s.info("main")["paused"], st)
-        s.open_popup()
-        note = s.popup_text("notice")
-        check("popup explains why YouTube is off", "off on YouTube by default" in note and "YouTube/Twitch Enhancer" in note, note)
-        disabled = s.ext("return document.getElementById('controls').classList.contains('disabled')")
-        check("popup controls disabled on YouTube until opt-in", disabled is True, disabled)
-        s.popup_click("#notice button")
-        check("opt-in from the popup turns Forte on for YouTube",
-              wait(lambda: s.item_status("main") == "routed", 8), s.item("main"))
+        check("youtube.com: Forte is on by default and routes the player",
+              wait(lambda: s.item_status("main") == "routed", 8) and s.status()["off"] == "", s.status())
         time.sleep(0.4)
         r = s.ratio()
-        check("...and applies the 300% set earlier", near(r, 3.0, 0.12), r)
-        s.set_settings(clashOptIn=[])
+        check("...at the 300% that was set", near(r, 3.0, 0.12), r)
+        s.open_popup()
+        hidden = s.ext("return document.getElementById('notice').hidden")
+        disabled = s.ext("return document.getElementById('controls').classList.contains('disabled')")
+        check("popup on YouTube: no warning, controls usable, site named",
+              hidden is True and disabled is False and s.popup_text("siteName") == "YouTube",
+              (hidden, disabled, s.popup_text("siteName")))
         s.load("main", host="www.twitch.tv")
         s.play("main")
         s.set_audio(gain=3)
-        time.sleep(1.2)
-        st = s.status()
-        check("twitch.tv: Forte is off by default", st and st["off"] == "clash:twitch.tv" and st["ctx"] == "none", st and st["off"])
+        check("twitch.tv: on by default too", wait(lambda: s.item_status("main") == "routed", 8) and s.status()["off"] == "", s.status())
+        time.sleep(0.4)
+        r = s.ratio()
+        check("...and boosted 3x", near(r, 3.0, 0.12), r)
         s.load("frame", extra="&fhost=www.youtube.com")
         s.set_audio(gain=2)
         s.d.switch_to.frame(s.d.find_element(By.ID, "frame"))
         s.d.execute_script("return window.play('main')")
-        time.sleep(1.5)
-        emb = s.d.execute_script("return window.info('main')")
+        emb = wait(lambda: (lambda i: i if i["wired"] else None)(s.d.execute_script("return window.info('main')")), 8)
         s.d.switch_to.default_content()
-        check("embedded YouTube player on another site is left alone too", emb["wired"] is None and not emb["paused"], emb)
+        check("embedded YouTube player on another site is boosted too", isinstance(emb, dict) and bool(emb["wired"]) and not emb["paused"], emb)
+
+        # ---- a player something else already routed, with no marker to go by: YouTube/Twitch
+        #      Enhancer on Twitch, any other volume add-on, or the site's own Web Audio player.
+        #      Firefox would let Forte route it as well, and the sound would play twice.
+        s.load("main,yte", host="www.twitch.tv")
+        s.js("return window.simulateYte('yte', false)")
+        s.play("yte")
+        s.set_audio(gain=2)
+        check("a player already routed by something else is left alone (no marker needed)",
+              wait(lambda: s.item_status("yte") == "claimed", 8) and (s.item("yte") or {}).get("why") == "captured", s.item("yte"))
+        time.sleep(1.0)
+        lvl = s.js("return window.yteLevel()")
+        check("...Forte adds no second path to it, and the other graph keeps the sound",
+              s.info("yte")["wired"] is None and s.item_status("yte") == "claimed" and lvl > 0.05, (s.info("yte"), lvl))
+        s.open_popup()
+        txt = s.popup_text("status")
+        check("popup says the player is handled by another add-on or the site", "already handled by another add-on or by the site" in txt, txt)
+        s.pause_all()
+        s.play("main")
+        check("...while a free player on the same page is still boosted",
+              wait(lambda: s.item_status("main") == "routed", 8), s.item("main"))
+        time.sleep(0.4)
+        r = s.ratio()
+        check("...at 2x", near(r, 2.0, 0.08), r)
+
+        # ---- updating from 0.1.x: which sites stay off so that nothing gets louder by itself
+        legacy = s.ext("""
+          const m = await import('/shared/settings.js');
+          const boost = { gain: 2, preset: 'flat', bands: [0,0,0,0,0,0,0,0,0,0], compressor: false, mono: false, balance: 0 };
+          const all = [...m.CLASH_HOSTS['youtube.com'], ...m.CLASH_HOSTS['twitch.tv']];
+          return {
+            all,
+            twitch: m.CLASH_HOSTS['twitch.tv'],
+            fresh: m.legacyQuietHosts(undefined, undefined, undefined),
+            everySite: m.legacyQuietHosts({ remember: 'global' }, {}, boost),
+            everySiteOptedIn: m.legacyQuietHosts({ remember: 'global', clashOptIn: ['youtube.com'] }, {}, boost),
+            leftover: m.legacyQuietHosts({ remember: 'site' }, { 'youtube.com': boost, 'example.com': boost }, null),
+            newSites: m.legacyQuietHosts({ defaultGain: 1.5 }, {}, null),
+            notRemembered: m.legacyQuietHosts({ remember: 'off' }, { 'youtube.com': boost }, boost),
+            merged: 'clashOptIn' in m.mergeSettings({ clashOptIn: ['youtube.com'] }),
+          };
+        """)
+        legacy = legacy if isinstance(legacy, dict) else {}
+        check("update rule: a fresh profile keeps no site off", legacy.get("fresh") == [], legacy.get("fresh"))
+        check("update rule: a volume kept for every site keeps YouTube and Twitch off",
+              bool(legacy.get("all")) and legacy.get("everySite") == legacy.get("all"), legacy.get("everySite"))
+        check("update rule: a site the user had opted in stays on",
+              bool(legacy.get("twitch")) and legacy.get("everySiteOptedIn") == legacy.get("twitch"), legacy.get("everySiteOptedIn"))
+        check("update rule: a volume left over for one host keeps only that host off",
+              legacy.get("leftover") == ["youtube.com"], legacy.get("leftover"))
+        check("update rule: a raised volume for new sites keeps them off",
+              legacy.get("newSites") == legacy.get("all"), legacy.get("newSites"))
+        check("update rule: with nothing remembered and a plain default, nothing is kept off",
+              legacy.get("notRemembered") == [], legacy.get("notRemembered"))
+        check("the old opt-in list is dropped from the settings", legacy.get("merged") is False, legacy.get("merged"))
 
         # ---- players YouTube/Twitch Enhancer already routed
         s.load("main,yte")
@@ -717,6 +773,158 @@ def session_d(forte_dir):
 
 # =============================================================== main
 
+# =============================================================== session E
+
+def session_e(forte_dir):
+    """A real update from 0.1.3 (the last version that was off on YouTube and Twitch)."""
+    old_zip = ROOT / "tests" / "fixtures" / "forte-0.1.3.zip"
+    old_dir = extract(old_zip)
+    s = Session([old_dir])
+    try:
+        ver = s.ext("return browser.runtime.getManifest().version;")
+        check("update: starts on 0.1.3", ver == "0.1.3", ver)
+        # A user who keeps 200% for every site and never opted in on YouTube or Twitch.
+        s.set_settings(remember="global")
+        s.load("main", host="other.test")
+        s.play("main")
+        s.set_audio(gain=2)
+        check("0.1.3: boosted on an ordinary site", wait(lambda: s.item_status("main") == "routed", 8), s.item("main"))
+        s.load("main", host="www.youtube.com")
+        s.play("main")
+        time.sleep(1.2)
+        st = s.status()
+        check("0.1.3: off on YouTube (never opted in)", st and st["off"] == "clash:youtube.com", st and st["off"])
+
+        # Install the new build over it, as an add-on update does.
+        s.d.switch_to.window(s.page)
+        s.d.execute("INSTALL_ADDON", {"path": str(forte_dir), "temporary": True})
+        time.sleep(2.0)
+        if s.ext_win not in s.d.window_handles:  # Firefox closes the old version's pages
+            s.d.switch_to.window(s.page)
+            s.d.switch_to.new_window("window")
+            s.ext_win = s.d.current_window_handle
+        s.d.switch_to.window(s.ext_win)
+        s.d.get(f"{EXT}/options/options.html")
+        s.d.switch_to.window(s.page)
+        ver = wait(lambda: (lambda v: v if v != "0.1.3" else None)(s.ext("return browser.runtime.getManifest().version;")), 8)
+        check("update: the new version is running", isinstance(ver, str) and ver != "0.1.3", ver)
+        stored = wait(lambda: (lambda g: g if (g.get("blockedSites") or []) else None)(
+            s.ext("const {settings} = await browser.storage.local.get('settings'); return settings || {};")), 8)
+        stored = stored if isinstance(stored, dict) else {}
+        blocked = stored.get("blockedSites") or []
+        check("update: YouTube and Twitch are put on the off list, because a boost would start there by itself",
+              "youtube.com" in blocked and "twitch.tv" in blocked and "other.test" not in blocked, blocked)
+        check("update: the old opt-in list is gone", "clashOptIn" not in stored, sorted(stored))
+
+        s.tab_id = None
+        s.load("main", host="www.youtube.com")
+        s.play("main")
+        time.sleep(1.5)
+        st = s.status()
+        check("after the update YouTube stays quiet: off, not routed, still playing",
+              st and st["off"] == "blocked" and s.info("main")["wired"] is None and not s.info("main")["paused"], st)
+        s.open_popup()
+        on = s.ext("return document.getElementById('siteEnabled').checked")
+        check("popup on YouTube shows the ordinary site switch, off", on is False, on)
+        s.popup_click("#siteEnabled")
+        check("switching it on boosts YouTube with the kept 200%",
+              wait(lambda: s.item_status("main") == "routed", 8), s.status())
+        time.sleep(0.4)
+        r = s.ratio()
+        check("...measured as 2x", near(r, 2.0, 0.08), r)
+        s.load("main", host="other.test")
+        s.play("main")
+        check("after the update other sites are boosted as before",
+              wait(lambda: s.item_status("main") == "routed", 8), s.item("main"))
+    finally:
+        s.quit()
+        shutil.rmtree(old_dir, ignore_errors=True)
+
+
+def check_milestone_card(api):
+    """The shared thank-you card, driven directly on the extension page that is open now:
+    the first card a user ever gets asks for a rating, later ones for a tip. Leaves storage as it found it."""
+    out = api("""
+      const m = await import('/shared/support.js');
+      const lists = await import('/shared/more-addons.js');
+      const self = lists.ADDONS.find((a) => a.id === browser.runtime.id);
+      const KEY = 'supportNudge';
+      const saved = (await browser.storage.local.get(KEY))[KEY];
+      const box = document.createElement('div');
+      document.body.append(box);
+      box.addEventListener('click', (e) => e.preventDefault(), true);  // a test click must not open AMO or Ko-fi
+      const fact = (n) => `Fact ${n}.`;
+      const stored = async () => (await browser.storage.local.get(KEY))[KEY];
+      const settle = async (pred) => {
+        for (let i = 0; i < 60; i++) {
+          const s = await stored();
+          if (s && pred(s)) return s;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        return (await stored()) || null;
+      };
+      const snap = () => {
+        const rate = box.querySelector('a[data-rate-ask]');
+        const tip = box.querySelector('a[data-support]');
+        return {
+          text: box.querySelector('p') ? box.querySelector('p').textContent : '',
+          rate: rate ? rate.href : null, rateLabel: rate ? rate.textContent.trim() : null,
+          rateNewTab: rate ? rate.target === '_blank' && rate.rel === 'noopener' : null,
+          tip: tip ? tip.href : null,
+          buttons: [...box.querySelectorAll('button')].map((b) => b.textContent),
+        };
+      };
+      const out = { slug: self ? self.slug : null, name: self ? self.name : null };
+      try {
+        await browser.storage.local.remove(KEY);
+        out.early = await m.maybeShowMilestone(box, 4, [5, 50], fact);
+        out.shown1 = await m.maybeShowMilestone(box, 5, [5, 50], fact);
+        out.first = snap();
+        box.querySelectorAll('button')[0].click();  // Not now
+        out.after1 = await settle((s) => (s.seen || []).includes(5));
+        out.hidden1 = box.hidden;
+        out.again = await m.maybeShowMilestone(box, 5, [5, 50], fact);
+        out.shown2 = await m.maybeShowMilestone(box, 50, [5, 50], fact);
+        out.second = snap();
+        box.querySelectorAll('button')[1].click();  // Don't ask again
+        out.after2 = await settle((s) => s.optOut === true);
+        out.afterOptOut = await m.maybeShowMilestone(box, 500, [5, 50, 500], fact);
+        // Someone who saw a tip card under an older version: no rating ask recorded yet.
+        await browser.storage.local.set({ [KEY]: { seen: [5], optOut: false } });
+        out.shown3 = await m.maybeShowMilestone(box, 50, [5, 50], fact);
+        out.third = snap();
+        const link = box.querySelector('a[data-rate-ask]');
+        if (link) link.click();
+        out.after3 = await settle((s) => s.rateAsked === true && (s.seen || []).includes(50));
+      } finally {
+        if (saved === undefined) await browser.storage.local.remove(KEY);
+        else await browser.storage.local.set({ [KEY]: saved });
+        box.remove();
+      }
+      return out;
+    """)
+    out = out if isinstance(out, dict) else {"error": out}
+    amo = "https://addons.mozilla.org/firefox/addon/%s/" % out.get("slug")
+    first, second, third = (out.get(k) or {} for k in ("first", "second", "third"))
+    check("thank-you card: nothing before the first milestone", out.get("early") is False, out.get("error") or out.get("early"))
+    check("thank-you card: the first one a user ever gets asks for a rating, not a tip",
+          out.get("shown1") is True and bool(out.get("slug")) and first.get("rate") == amo and first.get("rateNewTab") is True
+          and first.get("tip") is None and first.get("rateLabel") == "\u2605 Rate %s" % out.get("name")
+          and first.get("text") == "Fact 5. It's free, with no ads and no tracking. If it's useful to you, a rating on Firefox Add-ons helps other people find it."
+          and first.get("buttons") == ["Not now", "Don't ask again"], first)
+    check("thank-you card: 'Not now' closes it and that milestone never comes back",
+          out.get("hidden1") is True and 5 in ((out.get("after1") or {}).get("seen") or [])
+          and (out.get("after1") or {}).get("rateAsked") is True and out.get("again") is False, (out.get("after1"), out.get("again")))
+    check("thank-you card: the next milestone asks for a tip on Ko-fi",
+          out.get("shown2") is True and second.get("tip") == "https://ko-fi.com/carcer7378" and second.get("rate") is None
+          and second.get("text") == "Fact 50. It's free, with no ads and no tracking. If that's worth a coffee, tips keep it maintained.", second)
+    check("thank-you card: 'Don't ask again' is final",
+          (out.get("after2") or {}).get("optOut") is True and out.get("afterOptOut") is False, (out.get("after2"), out.get("afterOptOut")))
+    check("thank-you card: someone who saw a tip card under an older version is asked to rate once",
+          out.get("shown3") is True and third.get("rate") == amo and third.get("tip") is None
+          and (out.get("after3") or {}).get("rateAsked") is True and 50 in ((out.get("after3") or {}).get("seen") or []), (third, out.get("after3")))
+
+
 def main():
     forte_zip = latest_zip(ROOT)
     httpd = [server.serve(P1), server.serve(P2)]
@@ -735,6 +943,8 @@ def main():
             session_c(forte_dir, tempo_dir)
         if "D" in ONLY:
             session_d(forte_dir)
+        if "E" in ONLY:
+            session_e(forte_dir)
     finally:
         failed = [n for n, ok in results if not ok]
         print(f"\n{len(results) - len(failed)}/{len(results)} passed")
